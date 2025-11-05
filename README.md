@@ -1,4 +1,4 @@
-## Nome do Projeto
+<img width="1920" height="1080" alt="Roadmap" src="https://github.com/user-attachments/assets/e8110523-ab81-4d48-81f1-790aba3d27a2" />## Nome do Projeto
 Sistema de Análise Financeira.
 
 ## Equipe
@@ -17,6 +17,7 @@ O projeto de **Análise Financeira** tem como objetivo desenvolver um sistema em
 • **Licenciamento:** Dataset aberto (disponibilizado pelo Kaggle)
 
 ## Arquitetura da Solução
+<img width="1920" height="1080" alt="Roadmap" src="https://github.com/user-attachments/assets/03153baf-b764-4ca3-9922-09bc68211e68" />
 
 ## Demonstração
 
