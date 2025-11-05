@@ -1,5 +1,4 @@
-<img width="1920" height="1080" alt="Roadmap" src="https://github.com/user-attachments/assets/e8110523-ab81-4d48-81f1-790aba3d27a2" />## Nome do Projeto
-Sistema de Análise Financeira.
+## Sistema de Análise Financeira.
 
 ## Equipe
 • Henrique Pedrosa Laiter — 22008543 — henrique.pl1@puccampinas.edu.br
