@@ -1,0 +1,13 @@
+#interface de usuário
+stremlit
+plotly
+
+#banco de dados
+sqlalchemy
+psycopg2-binary
+
+#análise de dados
+pandas
+
+#configuração
+python-dotenv
