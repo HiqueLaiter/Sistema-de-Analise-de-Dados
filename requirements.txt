@@ -1,5 +1,5 @@
 #interface de usuário
-stremlit
+streamlit
 plotly
 
 #banco de dados

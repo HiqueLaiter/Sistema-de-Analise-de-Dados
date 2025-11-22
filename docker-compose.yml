@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # 1. Serviço do Banco de Dados PostgreSQL
+  db:
+    image: postgres:15-alpine # Imagem oficial, leve e segura
+    container_name: postgres_db
+    restart: always # Tenta reiniciar se falhar
+    environment:
+      # Variáveis usadas pelo container Postgres para inicialização
+      POSTGRES_USER: seu_usuario_db # Deve ser igual ao DB_USER no .env
+      POSTGRES_PASSWORD: sua_senha_secreta # Deve ser igual ao DB_PASSWORD no .env
+      POSTGRES_DB: financas_db # Deve ser igual ao DB_NAME no .env
+    ports:
+      # Expõe a porta 5432 do container para a porta 5432 da sua máquina local
+      - "5432:5432"
+    volumes:
+      # Persiste os dados em um volume nomeado para que não sejam perdidos ao parar o container
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. Serviço da Aplicação Streamlit (App)
+  app:
+    build:
+      context: . # Usa o Dockerfile da pasta atual
+    container_name: financial_analyzer
+    # O Streamlit precisa rodar APENAS DEPOIS que o DB estiver pronto
+    depends_on: 
+      - db
+    ports:
+      # Expõe a porta 8501 do container (porta padrão do Streamlit) para a porta 8501 da sua máquina
+      - "8501:8501"
+    environment:
+      # Variáveis de ambiente que a aplicação Streamlit (database.py) usará.
+      # É crucial que o DB_HOST seja 'db', que é o NOME do serviço do banco de dados no Docker Compose.
+      DB_HOST: db 
+      DB_PORT: 5432
+      DB_NAME: financas_db
+      DB_USER: seu_usuario_db
+      DB_PASSWORD: sua_senha_secreta
+      
+# Volumes nomeados para persistir os dados
+volumes:
+  postgres_data:
