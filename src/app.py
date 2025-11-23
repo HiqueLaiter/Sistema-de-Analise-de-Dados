@@ -1,32 +1,32 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy.orm import Session
-from datetime import datetime, date
+from datetime import datetime
 import plotly.express as px
-from src import crud, database, analyzer, models # Importações Absolutas Corrigidas
+from src import crud, database, analyzer, models 
 
 # Garantindo que as tabelas existam no DB
 models.Base.metadata.create_all(bind=database.engine) 
 
-# --- Função de Conexão com DB (usa a função get_db de database.py) ---
-# A função get_db não precisa ser cacheada aqui, ela já gerencia a sessão
-# Mas vamos manter o SessionLocal para garantir que o Streamlit funcione
-@st.cache_resource
-def get_db_session():
-    """Cacheia o motor de conexão com o banco de dados para reutilização."""
-    return database.SessionLocal()
+# --- FUNÇÃO CACHEADA DE LEITURA DE DADOS (NOVO) ---
+@st.cache_data(ttl=600) # Cache os dados por 10 minutos (600s), a menos que seja invalidado
+def fetch_data_to_df(_db_session: Session) -> pd.DataFrame:
+    """Busca todas as transações e retorna um DataFrame. Esta função será cacheada."""
+    return crud.get_transactions_dataframe(_db_session)
 
-# --- Estrutura da Aplicação Principal ---
+# Esta função apenas retorna a fábrica de sessões
+@st.cache_resource
+def get_db_session_factory():
+    return database.SessionLocal
 
 def main_app():
-    # Obtém a sessão do banco de dados para a aplicação
+    # --- OBTÉM UMA NOVA SESSÃO DO BANCO A CADA RERUN ---
     db: Session = database.get_db()
 
-    # --- 1. BARRA LATERAL (ENTRADA DE DADOS E IMPORTAÇÃO) ---
-    
+    # --- BARRA LATERAL (MUDANÇA: TODA A LÓGICA AGORA ESTÁ AQUI DENTRO) ---
     st.sidebar.title("Menu de Operações")
     
-    # Obtém categorias para o formulário manual
+    # Obtém categorias (AGORA FICA DENTRO DO main_app)
     categories = crud.get_categories(db)
     category_names = {c.name: c.id for c in categories}
     category_list = list(category_names.keys())
@@ -41,8 +41,6 @@ def main_app():
         if st.sidebar.button("Processar Importação"):
             try:
                 csv_df = pd.read_csv(uploaded_file)
-                
-                # Nomes de colunas do seu dataset
                 required_cols = ['Date', 'Transaction Description', 'Category', 'Amount', 'Type']
                 
                 if not all(col in csv_df.columns for col in required_cols):
@@ -50,22 +48,18 @@ def main_app():
                 else:
                     count_new_cats = 0
                     count_trans = 0
-                    
-                    # Usa um placeholder de texto para feedback enquanto processa
                     processing_status = st.sidebar.empty()
-                    total_rows = len(csv_df)
-                    
                     processing_status.info("Processando... Por favor, aguarde.")
 
                     for index, row in csv_df.iterrows():
-                        # A. TRATAMENTO DA CATEGORIA (Cria se não existir)
+                        # A. TRATAMENTO DA CATEGORIA
                         cat_name = str(row['Category']).strip()
                         category_obj = crud.get_category_by_name(db, cat_name)
                         if not category_obj:
                             category_obj = crud.create_category(db, cat_name)
                             count_new_cats += 1
                         
-                        # B. TRATAMENTO DO VALOR (Ajusta o sinal baseado no Type)
+                        # B. TRATAMENTO DO VALOR (Sinal Negativo/Positivo)
                         raw_amount = float(row['Amount'])
                         trans_type = str(row['Type']).strip().lower() 
                         
@@ -87,14 +81,14 @@ def main_app():
                         crud.create_transaction(db, new_trans)
                         count_trans += 1
                         
-                    processing_status.empty() # Remove o status de processamento
+                    processing_status.empty() 
                     st.sidebar.success(f"Sucesso! {count_trans} transações importadas.")
                     if count_new_cats > 0:
                         st.sidebar.info(f"{count_new_cats} novas categorias criadas.")
                     
-                    # Limpa o cache e recarrega para mostrar os novos dados
-                    st.cache_data.clear()
-                    st.rerun() # Dispara um novo ciclo de execução
+                    # --- LIMPEZA DE CACHE APÓS INSERÇÃO ---
+                    fetch_data_to_df.clear() # NOVO: Limpa o cache para que a próxima leitura seja fresca
+                    st.rerun() 
                         
             except Exception as e:
                 st.sidebar.error(f"Erro ao processar: Verifique formato do CSV e conexão. Erro: {e}")
@@ -106,25 +100,24 @@ def main_app():
     # ==========================================
     st.sidebar.header("➕ Nova Transação Manual")
     
-    # O restante do seu formulário manual vai aqui... (Usamos um bloco 'with' para o form)
     with st.sidebar.form("new_transaction_form", clear_on_submit=True):
         if not category_list:
-            st.warning("Nenhuma categoria encontrada. Importe um CSV ou crie uma padrão.")
+            st.warning("Nenhuma categoria encontrada. Crie uma padrão abaixo.")
             st.form_submit_button("Criar Categoria Padrão", on_click=lambda: crud.create_category(db, "Salário"))
         
         amount = st.number_input("Valor (Entrada +, Saída -)", value=0.0, step=10.0)
         description = st.text_input("Descrição da Transação")
         
-        # Mapeia o nome da categoria selecionada para o ID
         selected_category_name = st.selectbox("Categoria", category_list)
         category_id = category_names.get(selected_category_name)
         
-        transaction_date = st.date_input("Data", value=datetime.now().date()) # Corrigido para .date()
+        transaction_date = st.date_input("Data", value=datetime.now().date())
     
         submitted = st.form_submit_button("Salvar Transação")
     
         if submitted and category_id:
             try:
+                # 1. Salva a transação no banco de dados
                 new_transaction = models.TransactionCreate(
                     amount=amount,
                     description=description,
@@ -133,17 +126,21 @@ def main_app():
                 )
                 crud.create_transaction(db, transaction=new_transaction)
                 st.success("Transação salva com sucesso! 🎉")
+                
+                # --- LIMPEZA DE CACHE APÓS INSERÇÃO ---
+                fetch_data_to_df.clear() # NOVO: Limpa o cache!
                 st.rerun() 
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
 
+    # --- INÍCIO DO DASHBOARD ---
     st.title("💸 Sistema de Análise Financeira Proativa")
 
-    # --- 2. DASHBOARD (Leitura e Análise) ---
-    
-    # Puxa os dados como DataFrame
+    # 1. LEITURA E PREPARAÇÃO DE DADOS (USANDO A FUNÇÃO CACHEADA)
+    # Garante que a função só é executada se o cache for limpo ou expirar
     try:
-        df = crud.get_transactions_dataframe(db)
+        # Troca para o underscore na chamada:
+        df = fetch_data_to_df(db) # Corrigido para passar 'db' como '_db_session'
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}. Verifique a conexão com o PostgreSQL.")
         df = pd.DataFrame() 
@@ -152,26 +149,25 @@ def main_app():
         st.info("Nenhum dado encontrado. Use a barra lateral para adicionar dados.")
         return 
         
-    # --- CÁLCULOS PRINCIPAIS ---
+    # O restante do código de análise e exibição é mantido
     balance_df = analyzer.calculate_monthly_balance(df)
     category_averages = analyzer.calculate_category_averages(df)
     insights = analyzer.generate_insights(df, category_averages)
 
-    # --- METRICAS CHAVE ---
-    st.header("Métricas do Mês Atual")
+    # ... (Métricas, Alertas, Gráficos e Tabela de Dados Brutos continuam aqui) ...
     
+    # METRICAS CHAVE
+    st.header("Métricas do Mês Atual")
     current_month_data = balance_df.iloc[-1] if not balance_df.empty else {'Income': 0, 'Expense': 0, 'Balance': 0}
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Saldo Total (Mês)", f"R$ {current_month_data['Balance']:.2f}")
     col2.metric("Total de Entradas", f"R$ {current_month_data['Income']:.2f}")
     col3.metric("Total de Saídas", f"R$ {current_month_data['Expense']:.2f}")
-    
     st.markdown("---")
     
-    # --- ALERTA E INSIGHTS ---
+    # ALERTA E INSIGHTS
     st.header("Análise Proativa e Insights")
-    
     if insights:
         for insight in insights:
             if "ALERTA" in insight["type"]:
@@ -180,34 +176,29 @@ def main_app():
                 st.success(insight["message"]) 
     else:
         st.info("Nenhum alerta ou sucesso detectado neste mês. Os gastos estão na média.")
-    
     st.markdown("---")
 
-    # --- VISUALIZAÇÕES GRÁFICAS ---
+    # VISUALIZAÇÕES GRÁFICAS
     st.header("Visualizações Históricas")
     
-    # Gráfico 1: Saldo Mensal (Linha)
     fig_balance = px.line(
         balance_df, 
-        # Mude as colunas Year e Month para Inteiro ANTES de formatar a string
         x=balance_df.apply(lambda row: f"{row['Year'].astype(int)}-{row['Month'].astype(int):02d}", axis=1), 
-        y="Balance",
+        y="Balance", 
         title="Evolução do Saldo Mensal",
         labels={'x': 'Mês', 'Balance': 'Saldo (R$)'}
     )
     st.plotly_chart(fig_balance, use_container_width=True)
     
-    # Gráfico 2: Distribuição de Despesas por Categoria (Pizza)
-    expense_categories = df[df['amount'] < 0].groupby('category_name')['amount'].sum().abs().reset_index()
     fig_pie = px.pie(
-        expense_categories, 
+        df[df['amount'] < 0].groupby('category_name')['amount'].sum().abs().reset_index(), 
         values='amount', 
         names='category_name', 
         title='Distribuição de Despesas por Categoria'
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # --- VISUALIZAÇÃO DE DADOS BRUTOS ---
+    # VISUALIZAÇÃO DE DADOS BRUTOS
     with st.expander("Ver Transações Recentes"):
         st.dataframe(df.sort_values(by='date', ascending=False), use_container_width=True)
 
