@@ -6,6 +6,9 @@ FROM python:3.11-slim
 # Define a pasta de trabalho dentro do container.
 WORKDIR /app
 
+# Isso diz ao Python para procurar imports na pasta /app
+ENV PYTHONPATH=/app
+
 # Define variáveis de ambiente (Útil para a conexão com o banco de dados)
 # As credenciais reais serão passadas via Docker Compose ou Azure.
 ENV PYTHONUNBUFFERED 1
@@ -26,6 +29,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ src/
 
 # --- 5. Comando de Execução ---
-# Define o comando que será executado quando o container iniciar.
-# O Streamlit usa 'streamlit run' para iniciar a aplicação.
-CMD ["streamlit", "run", "src/app.py"]
+# Agora, usamos `python -m` e dizemos ao Streamlit para rodar o app
+# Desta forma, o Python entende que o 'src' é o pacote raiz, resolvendo as importações relativas.
+CMD ["python", "-m", "streamlit", "run", "src/app.py"]

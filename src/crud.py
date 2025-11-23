@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from . import models # Presume-se que models.py define Transaction e Category
-from .models import Transaction, Category, TransactionCreate
+from src import models
+from src.models import Transaction, Category, TransactionCreate
 from typing import List, Optional
 from datetime import datetime
 import pandas as pd
@@ -55,6 +55,10 @@ def get_categories(db: Session) -> List[Category]:
     """Retorna todas as categorias disponíveis."""
     return db.query(Category).all()
 
+
+def get_category_by_name(db: Session, name: str):
+    """Busca uma categoria pelo nome (para evitar duplicações na importação)."""
+    return db.query(Category).filter(Category.name == name).first()
 
 
 # --- Função Essencial para Análise ---

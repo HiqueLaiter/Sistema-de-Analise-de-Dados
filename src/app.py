@@ -3,96 +3,163 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 import plotly.express as px
+from src import crud, database, analyzer, models # Importações Absolutas Corrigidas
 
-# Importando nossos módulos
-from . import crud, database, analyzer, models 
 # Garantindo que as tabelas existam no DB
 models.Base.metadata.create_all(bind=database.engine) 
 
 # --- Função de Conexão com DB (usa a função get_db de database.py) ---
+# A função get_db não precisa ser cacheada aqui, ela já gerencia a sessão
+# Mas vamos manter o SessionLocal para garantir que o Streamlit funcione
 @st.cache_resource
 def get_db_session():
-    """Cacheia a conexão com o banco de dados para reutilização."""
+    """Cacheia o motor de conexão com o banco de dados para reutilização."""
     return database.SessionLocal()
 
-
-# --- 2. BARRA LATERAL (ENTRADA DE DADOS) ---
-st.sidebar.title("➕ Adicionar Transação")
-
-# Obtém categorias para o formulário
-db: Session = database.get_db()
-categories = crud.get_categories(db)
-category_names = {c.name: c.id for c in categories}
-category_list = list(category_names.keys())
-
-# Form para nova transação
-with st.sidebar.form("new_transaction_form", clear_on_submit=True):
-    # Dica: Permite criar categorias padrões se o DB estiver vazio!
-    if not category_list:
-        st.warning("Nenhuma categoria encontrada. Crie algumas padrões (Ex: Salário, Moradia).")
-        st.form_submit_button("Criar Categorias Padrões", on_click=lambda: crud.create_category(db, "Salário"))
-    
-    amount = st.number_input("Valor (Positivo para Entrada, Negativo para Saída)", value=0.0, step=10.0)
-    description = st.text_input("Descrição da Transação")
-    
-    # Mapeia o nome da categoria selecionada para o ID
-    selected_category_name = st.selectbox("Categoria", category_list)
-    category_id = category_names.get(selected_category_name)
-    
-    transaction_date = st.date_input("Data", value=datetime.now())
-
-    submitted = st.form_submit_button("Salvar Transação")
-
-    if submitted and category_id:
-        try:
-            # Cria o objeto Pydantic para validação
-            new_transaction = models.TransactionCreate(
-                amount=amount,
-                description=description,
-                category_id=category_id,
-                date=datetime.combine(transaction_date, datetime.min.time()) # Combina data/hora
-            )
-            # Chama a função CRUD
-            crud.create_transaction(db, transaction=new_transaction)
-            st.success("Transação salva com sucesso! 🎉")
-            # Recarregar a página para atualizar o dashboard
-            st.rerun() 
-        except Exception as e:
-            st.error(f"Erro ao salvar: {e}")
-
+# --- Estrutura da Aplicação Principal ---
 
 def main_app():
+    # Obtém a sessão do banco de dados para a aplicação
+    db: Session = database.get_db()
+
+    # --- 1. BARRA LATERAL (ENTRADA DE DADOS E IMPORTAÇÃO) ---
+    
+    st.sidebar.title("Menu de Operações")
+    
+    # Obtém categorias para o formulário manual
+    categories = crud.get_categories(db)
+    category_names = {c.name: c.id for c in categories}
+    category_list = list(category_names.keys())
+
+    # ==========================================
+    # 1. IMPORTADOR DE CSV 
+    # ==========================================
+    st.sidebar.header("📂 Importar Dados (CSV)")
+    uploaded_file = st.sidebar.file_uploader("Selecione seu arquivo CSV", type=["csv"])
+
+    if uploaded_file is not None:
+        if st.sidebar.button("Processar Importação"):
+            try:
+                csv_df = pd.read_csv(uploaded_file)
+                
+                # Nomes de colunas do seu dataset
+                required_cols = ['Date', 'Transaction Description', 'Category', 'Amount', 'Type']
+                
+                if not all(col in csv_df.columns for col in required_cols):
+                    st.sidebar.error(f"O CSV precisa ter as colunas: {', '.join(required_cols)}")
+                else:
+                    count_new_cats = 0
+                    count_trans = 0
+                    
+                    # Usa um placeholder de texto para feedback enquanto processa
+                    processing_status = st.sidebar.empty()
+                    total_rows = len(csv_df)
+                    
+                    processing_status.info("Processando... Por favor, aguarde.")
+
+                    for index, row in csv_df.iterrows():
+                        # A. TRATAMENTO DA CATEGORIA (Cria se não existir)
+                        cat_name = str(row['Category']).strip()
+                        category_obj = crud.get_category_by_name(db, cat_name)
+                        if not category_obj:
+                            category_obj = crud.create_category(db, cat_name)
+                            count_new_cats += 1
+                        
+                        # B. TRATAMENTO DO VALOR (Ajusta o sinal baseado no Type)
+                        raw_amount = float(row['Amount'])
+                        trans_type = str(row['Type']).strip().lower() 
+                        
+                        if 'expense' in trans_type: 
+                            final_amount = -abs(raw_amount)
+                        else:
+                            final_amount = abs(raw_amount)
+
+                        # C. TRATAMENTO DA DATA
+                        trans_date = pd.to_datetime(row['Date']).to_pydatetime()
+                        
+                        # D. SALVAR NO BANCO
+                        new_trans = models.TransactionCreate(
+                            amount=final_amount,
+                            description=str(row['Transaction Description']),
+                            category_id=category_obj.id,
+                            date=trans_date
+                        )
+                        crud.create_transaction(db, new_trans)
+                        count_trans += 1
+                        
+                    processing_status.empty() # Remove o status de processamento
+                    st.sidebar.success(f"Sucesso! {count_trans} transações importadas.")
+                    if count_new_cats > 0:
+                        st.sidebar.info(f"{count_new_cats} novas categorias criadas.")
+                    
+                    # Limpa o cache e recarrega para mostrar os novos dados
+                    st.cache_data.clear()
+                    st.rerun() # Dispara um novo ciclo de execução
+                        
+            except Exception as e:
+                st.sidebar.error(f"Erro ao processar: Verifique formato do CSV e conexão. Erro: {e}")
+
+    st.sidebar.markdown("---")
+    
+    # ==========================================
+    # 2. FORMULÁRIO MANUAL 
+    # ==========================================
+    st.sidebar.header("➕ Nova Transação Manual")
+    
+    # O restante do seu formulário manual vai aqui... (Usamos um bloco 'with' para o form)
+    with st.sidebar.form("new_transaction_form", clear_on_submit=True):
+        if not category_list:
+            st.warning("Nenhuma categoria encontrada. Importe um CSV ou crie uma padrão.")
+            st.form_submit_button("Criar Categoria Padrão", on_click=lambda: crud.create_category(db, "Salário"))
+        
+        amount = st.number_input("Valor (Entrada +, Saída -)", value=0.0, step=10.0)
+        description = st.text_input("Descrição da Transação")
+        
+        # Mapeia o nome da categoria selecionada para o ID
+        selected_category_name = st.selectbox("Categoria", category_list)
+        category_id = category_names.get(selected_category_name)
+        
+        transaction_date = st.date_input("Data", value=datetime.now().date()) # Corrigido para .date()
+    
+        submitted = st.form_submit_button("Salvar Transação")
+    
+        if submitted and category_id:
+            try:
+                new_transaction = models.TransactionCreate(
+                    amount=amount,
+                    description=description,
+                    category_id=category_id,
+                    date=datetime.combine(transaction_date, datetime.min.time())
+                )
+                crud.create_transaction(db, transaction=new_transaction)
+                st.success("Transação salva com sucesso! 🎉")
+                st.rerun() 
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
+
     st.title("💸 Sistema de Análise Financeira Proativa")
 
-    # --- 1. LEITURA E PREPARAÇÃO DE DADOS ---
-    db: Session = database.get_db()
+    # --- 2. DASHBOARD (Leitura e Análise) ---
     
     # Puxa os dados como DataFrame
     try:
         df = crud.get_transactions_dataframe(db)
     except Exception as e:
         st.error(f"Erro ao carregar dados: {e}. Verifique a conexão com o PostgreSQL.")
-        df = pd.DataFrame() # Cria um DF vazio para evitar quebra
+        df = pd.DataFrame() 
 
     if df.empty:
-        st.info("Nenhum dado encontrado. Use a barra lateral para adicionar sua primeira transação.")
-        return # Para a execução se não houver dados
+        st.info("Nenhum dado encontrado. Use a barra lateral para adicionar dados.")
+        return 
         
-    # --- 2. CÁLCULOS PRINCIPAIS ---
-    
-    # Obtém o DataFrame de saldo mensal
+    # --- CÁLCULOS PRINCIPAIS ---
     balance_df = analyzer.calculate_monthly_balance(df)
-    
-    # Calcula as médias históricas para alertas
     category_averages = analyzer.calculate_category_averages(df)
-    
-    # Gera insights e alertas
     insights = analyzer.generate_insights(df, category_averages)
 
-    # --- 3. METRICAS CHAVE (O ORGANIZADOR) ---
+    # --- METRICAS CHAVE ---
     st.header("Métricas do Mês Atual")
     
-    # Encontra os totais do mês atual
     current_month_data = balance_df.iloc[-1] if not balance_df.empty else {'Income': 0, 'Expense': 0, 'Balance': 0}
     
     col1, col2, col3 = st.columns(3)
@@ -102,29 +169,29 @@ def main_app():
     
     st.markdown("---")
     
-    # --- 4. ALERTA E INSIGHTS (O REQUISITO PROATIVO) ---
+    # --- ALERTA E INSIGHTS ---
     st.header("Análise Proativa e Insights")
     
     if insights:
         for insight in insights:
-            # Usa um expander para o alerta principal
             if "ALERTA" in insight["type"]:
-                st.error(insight["message"]) # Alerta Vermelho
+                st.error(insight["message"]) 
             else:
-                st.success(insight["message"]) # Mensagem de Sucesso
+                st.success(insight["message"]) 
     else:
         st.info("Nenhum alerta ou sucesso detectado neste mês. Os gastos estão na média.")
     
     st.markdown("---")
 
-    # --- 5. VISUALIZAÇÕES GRÁFICAS (O REQUISITO VISUAL) ---
+    # --- VISUALIZAÇÕES GRÁFICAS ---
     st.header("Visualizações Históricas")
     
     # Gráfico 1: Saldo Mensal (Linha)
     fig_balance = px.line(
         balance_df, 
-        x=balance_df.apply(lambda row: f"{row['Year']}-{row['Month']:02d}", axis=1), 
-        y="Balance", 
+        # Mude as colunas Year e Month para Inteiro ANTES de formatar a string
+        x=balance_df.apply(lambda row: f"{row['Year'].astype(int)}-{row['Month'].astype(int):02d}", axis=1), 
+        y="Balance",
         title="Evolução do Saldo Mensal",
         labels={'x': 'Mês', 'Balance': 'Saldo (R$)'}
     )
@@ -140,7 +207,7 @@ def main_app():
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # --- 6. VISUALIZAÇÃO DE DADOS BRUTOS ---
+    # --- VISUALIZAÇÃO DE DADOS BRUTOS ---
     with st.expander("Ver Transações Recentes"):
         st.dataframe(df.sort_values(by='date', ascending=False), use_container_width=True)
 
