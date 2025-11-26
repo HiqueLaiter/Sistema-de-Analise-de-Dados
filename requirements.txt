@@ -4,7 +4,7 @@ plotly
 
 #banco de dados
 sqlalchemy
-psycopg2-binary
+pyodbc
 
 #análise de dados
 pandas
