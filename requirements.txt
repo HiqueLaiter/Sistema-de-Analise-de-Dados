@@ -1,15 +1,7 @@
-#interface de usuário
-streamlit
-plotly
-
-#banco de dados
-sqlalchemy
-pyodbc
-
-#análise de dados
-pandas
-
-#configuração
-python-dotenv
-
+streamlit       # Interface Web interativa
+pandas          # Manipulação e análise de dados
+sqlalchemy      # ORM para banco de dados
+python-dotenv   # Gestão de variáveis de ambiente
+plotly          # Gráficos interativos
+pyodbc          # Driver para conexão com SQL Server
 pydantic
