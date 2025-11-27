@@ -8,7 +8,7 @@ from src import crud, database, analyzer, models
 # Garantindo que as tabelas existam no DB
 models.Base.metadata.create_all(bind=database.engine) 
 
-# --- FUNÇÃO CACHEADA DE LEITURA DE DADOS (NOVO) ---
+# --- FUNÇÃO CACHEADA DE LEITURA DE DADOS ---
 @st.cache_data(ttl=600) # Cache os dados por 10 minutos (600s), a menos que seja invalidado
 def fetch_data_to_df(_db_session: Session) -> pd.DataFrame:
     """Busca todas as transações e retorna um DataFrame. Esta função será cacheada."""
@@ -98,14 +98,14 @@ def main_app():
     # ==========================================
     # 2. FORMULÁRIO MANUAL 
     # ==========================================
-    st.sidebar.header("➕ Nova Transação Manual")
+    st.sidebar.header("➕ Nova Transação")
     
     with st.sidebar.form("new_transaction_form", clear_on_submit=True):
         if not category_list:
             st.warning("Nenhuma categoria encontrada. Crie uma padrão abaixo.")
             st.form_submit_button("Criar Categoria Padrão", on_click=lambda: crud.create_category(db, "Salário"))
         
-        amount = st.number_input("Valor (Entrada +, Saída -)", value=0.0, step=10.0)
+        amount = st.number_input("Valor (Entrada (+), Saída (-))", value=0.0, step=10.0)
         description = st.text_input("Descrição da Transação")
         
         selected_category_name = st.selectbox("Categoria", category_list)
@@ -114,27 +114,35 @@ def main_app():
         transaction_date = st.date_input("Data", value=datetime.now().date())
     
         submitted = st.form_submit_button("Salvar Transação")
-    
+
         if submitted and category_id:
             try:
-                # 1. Salva a transação no banco de dados
+                # 1. Cria o objeto da transação
                 new_transaction = models.TransactionCreate(
                     amount=amount,
                     description=description,
                     category_id=category_id,
                     date=datetime.combine(transaction_date, datetime.min.time())
                 )
-                crud.create_transaction(db, transaction=new_transaction)
-                st.success("Transação salva com sucesso! 🎉")
                 
-                # --- LIMPEZA DE CACHE APÓS INSERÇÃO ---
-                fetch_data_to_df.clear() # NOVO: Limpa o cache!
+                # 2. Salva no Banco de Dados (Isso envia para o Azure SQL)
+                crud.create_transaction(db, transaction=new_transaction)
+                
+                # 3. MENSAGEM DE SUCESSO
+                st.success("Transação salva com sucesso! 🎉")
+
+                # Limpa o cache da função que busca os dados. 
+                # Isso obriga o Streamlit a ir no banco buscar TUDO de novo (antigos + novos)
+                fetch_data_to_df.clear() 
+                
+                # Recarrega a página imediatamente para atualizar os gráficos
                 st.rerun() 
+                
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
 
     # --- INÍCIO DO DASHBOARD ---
-    st.title("💸 Sistema de Análise Financeira Proativa")
+    st.title("💸 Sistema de Análise Financeira")
 
     # 1. LEITURA E PREPARAÇÃO DE DADOS (USANDO A FUNÇÃO CACHEADA)
     # Garante que a função só é executada se o cache for limpo ou expirar
@@ -149,12 +157,11 @@ def main_app():
         st.info("Nenhum dado encontrado. Use a barra lateral para adicionar dados.")
         return 
         
-    # O restante do código de análise e exibição é mantido
     balance_df = analyzer.calculate_monthly_balance(df)
     category_averages = analyzer.calculate_category_averages(df)
     insights = analyzer.generate_insights(df, category_averages)
 
-    # ... (Métricas, Alertas, Gráficos e Tabela de Dados Brutos continuam aqui) ...
+    # ... (Métricas, Alertas, Gráficos e Tabela de Dados Brutos) ...
     
     # METRICAS CHAVE
     st.header("Métricas do Mês Atual")
