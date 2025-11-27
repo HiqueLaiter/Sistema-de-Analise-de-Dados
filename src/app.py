@@ -20,8 +20,15 @@ def get_db_session_factory():
     return database.SessionLocal
 
 def main_app():
+    st.set_page_config(
+        page_title="Finanças Proativa", # Nome na aba do navegador
+        page_icon="💸",                 # Ícone na aba 
+        layout="wide"                   
+    )
+    
     # --- OBTÉM UMA NOVA SESSÃO DO BANCO A CADA RERUN ---
     db: Session = database.get_db()
+
 
     # --- BARRA LATERAL (MUDANÇA: TODA A LÓGICA AGORA ESTÁ AQUI DENTRO) ---
     st.sidebar.title("Menu de Operações")
