@@ -44,7 +44,7 @@ A solução propõe aplicar conceitos de **computação em nuvem, DevOps (CI/CD)
 
 A solução segue uma arquitetura PaaS (*Platform as a Service*) para garantir escalabilidade e facilidade de gestão.
 
-<img width="1920" height="1080" alt="Arquitetura Cloud" src="https://github.com/user-attachments/assets/03153baf-b764-4ca3-9922-09bc68211e68" />
+![Roadmap](https://github.com/user-attachments/assets/8c79e331-abca-450a-acf7-24557c8b2462)
 
 **Fluxo de Dados:**
 1.  **Desenvolvimento:** O código é versionado no GitHub.
@@ -62,7 +62,7 @@ A solução segue uma arquitetura PaaS (*Platform as a Service*) para garantir e
 
 ### 1. Clonar o Repositório
 ```bash
-git clone [https://github.com/SEU_USUARIO/SEU_REPO.git](https://github.com/HiqueLaiter/Sistema-de-Analise-de-Dados.git)
+git clone https://github.com/HiqueLaiter/Sistema-de-Analise-de-Dados.git
 cd SEU_REPO
 ```
 
@@ -85,7 +85,7 @@ cd SEU_REPO
 
 ## 💻 Demonstração
 
-> **Link da Aplicação em Produção:** [(https://app-fin-proa-final.azurewebsites.net/]
+> **Link da Aplicação em Produção:** https://app-fin-proa-final.azurewebsites.net/
 
 ---
 
