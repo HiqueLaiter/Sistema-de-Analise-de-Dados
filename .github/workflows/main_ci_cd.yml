@@ -1,24 +1,21 @@
-# .github/workflows/main_ci_cd.yml
 name: Build, Push e Deploy (Azure App Service)
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch: # Permite acionamento manual
+  workflow_dispatch:
 
 env:
-  # Variáveis de Configuração do Projeto
-  DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/finance-proativa # Nome do Repositório no Docker Hub
-  WEBAPP_NAME: app-fin-proa-final # Web App na Azure
-  RG_NAME: rg-finance-proativa-novo # Resource Group
+  DOCKER_REPO: ${{ secrets.DOCKER_USERNAME }}/finance-proativa
+  WEBAPP_NAME: app-fin-proa-final
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 1. Checkout do Código
+    - name: 1. Checkout do Codigo
       uses: actions/checkout@v4
       
     - name: 2. Login no Docker Hub
@@ -36,18 +33,12 @@ jobs:
       with:
         context: .
         push: true
-        tags: ${{ env.DOCKER_REPO }}:${{ env.IMAGE_TAG }} # Ex: usuario/repo:a1b2c3d
-        # O Dockerfile deve ter o código de instalação do driver ODBC
+        tags: ${{ env.DOCKER_REPO }}:${{ env.IMAGE_TAG }}
 
     - name: 5. Deploy no Azure App Service
       uses: azure/webapps-deploy@v3
       with:
         app-name: ${{ env.WEBAPP_NAME }}
         slot-name: 'production'
-        # Autentica usando o Publish Profile que você copiou
         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }} 
-        # Informa o Azure para puxar a imagem recém-enviada
         images: ${{ env.DOCKER_REPO }}:${{ env.IMAGE_TAG }}
-        
-    - name: 6. Mensagem de Sucesso
-      run: echo "Deployment concluído com sucesso! Imagem: ${{ env.DOCKER_REPO }}:${{ env.IMAGE_TAG }}"
